@@ -1,0 +1,27 @@
+# --- ARQUIVOS DE SISTEMA E IDE ---
+__pycache__/
+*.pyc
+.DS_Store
+.vscode/
+.idea/
+
+# --- AMBIENTE VIRTUAL (se houver) ---
+venv/
+env/
+.env
+
+# --- BANCO DE DADOS (Não suba seus dados!) ---
+*.db
+youtube_tracker.db
+
+# --- ARQUIVOS DE CONTROLE DE INSTALAÇÃO ---
+# Ignorar o lock para que quem baixar o projeto instale as deps
+install.lock
+
+# --- ARQUIVOS DE LOG E ERROS ---
+*.log
+
+# --- CHAVES DE API (Segurança Extrema) ---
+# Se você usar um arquivo secrets.toml ou config, ignore-o
+.streamlit/secrets.toml
+config.py

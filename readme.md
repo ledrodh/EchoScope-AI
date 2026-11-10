@@ -1,11 +1,11 @@
 # 🔴 EchoScope AI — YouTube Competitive Intelligence & Strategic Analytics
 
 [![Python](https://img.shields.io/badge/python-3.12%2B-blue)](https://www.python.org/)
-[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 [![Code Style: Ruff](https://img.shields.io/badge/code%20style-ruff-000000.svg)](https://github.com/astral-sh/ruff)
 [![Type Checker: Pyright](https://img.shields.io/badge/type%20checker-pyright-2b5b84.svg)](https://github.com/microsoft/pyright)
-[![Coverage: 95%](https://img.shields.io/badge/coverage-95%25-brightgreen)](quality-reports/latest/coverage.json)
-[![Tests: 68 Passed](https://img.shields.io/badge/tests-68%20passed-success)](tests/)
+[![Coverage: 95%](https://img.shields.io/badge/coverage-95%25-brightgreen)](docs/testing-strategy.md)
+[![Tests: 70 Passed](https://img.shields.io/badge/tests-70%20passed-success)](tests/)
 
 **EchoScope AI** is a production-grade competitive intelligence platform designed to track, benchmark, and analyze YouTube channels and content formats. Built as a software and data engineering portfolio project, it solves critical reliability issues present in typical creator tools: snapshot contamination, vanity metric distortion, unhandled API quota limits, and AI hallucinations.
 
@@ -38,7 +38,7 @@ flowchart TD
 - **Temporal Snapshot Isolation:** Relational schema (`analysis_runs`, `analysis_run_channels`, `channel_snapshots`, `video_snapshots`) indexed by unique `run_id`. Repeating a collection never contaminates historical aggregates.
 - **Resilient Batch Operations:** Partial failure tolerance ensures that if 1 of 5 channels fails (e.g. 404 Not Found, channel suspended, or network timeout), valid channels are persisted and analyzed with status `partial`.
 - **Interrupted Run Reconciliation:** Abrupt process crashes leave no zombie `running` executions; a startup reconciliation pass inspects persisted data and cleanly marks runs as `partial` or `failed`.
-- **Growth Signals & Fraud Detection:** Distinguishes genuine new uploads from omitted historical videos, and isolates gross positive view growth from negative YouTube bot/audit purges ($$\Delta V < 0$$).
+- **Growth Signals & Negative Adjustment Isolation:** Distinguishes genuine new uploads from omitted historical videos, and isolates gross positive view growth from negative view count adjustments ($$\Delta V < 0$$).
 - **Format Classifier (YouTube Rules Aligned):** Correctly handles YouTube's 15/10/2024 and 08/12/2025 rule cutoffs (allowing up to 180s for Shorts), admitting explicit `Unknown` when third-party video orientation cannot be confirmed.
 - **AST-Based Architectural Boundary Testing:** Enforces decoupled UI layers by inspecting Python Abstract Syntax Trees (`ast.parse`), prohibiting direct database or external API imports inside `ui/`.
 
@@ -49,10 +49,10 @@ flowchart TD
 | Metric | Formula / Definition | Rationale & Handling |
 | :--- | :--- | :--- |
 | **Median Views ($$\tilde{x}$$)** | Middle value of sorted views with sample size ($$n$$) | Eliminates viral outlier skewness inherent in power-law view distributions. |
-| **VSR** | $$\frac{\sum \text{Views}}{\text{Subscribers}}$$ | Measures organic discovery beyond subscriber base. Preserves `NULL` when subscribers are hidden. |
+| **VSR** | $$\frac{\sum \text{Views}}{\text{Subscribers}}$$ | Normalizes sampled video views relative to subscriber count. Preserves `NULL` when subscribers are hidden. |
 | **Likes-to-Views Ratio** | $$\left(\frac{\sum \text{Likes}_k}{\sum \text{Views}_k}\right) \times 100$$ | Denominator strictly excludes videos with concealed like counts to avoid artificially depressed percentages. |
 | **Views per Day (VPD)** | $$\frac{\text{Views}}{\text{Collected At} - \text{Published At}}$$ | Measured against run snapshot date rather than local clock, ensuring reproducible historical values. |
-| **Growth Velocity ($$R$$)** | $$R = \frac{\Delta V}{\Delta t}$$ (views per day) | Tracks identical videos across two snapshot dates ($$T_0 \to T_1$$), isolating gross positive growth from fraud purges. |
+| **Growth Velocity ($$R$$)** | $$R = \frac{\Delta V}{\Delta t}$$ (views per day) | Tracks identical videos across two snapshot dates ($$T_0 \to T_1$$), isolating gross positive growth from negative view count adjustments. |
 | **Tracked Views Share** | $$\left(\frac{\text{Channel Views}}{\sum \text{Tracked Views}}\right) \times 100$$ | Semantically honest label representing the monitored competitive sample, not the entire YouTube platform. |
 
 *For complete mathematical proofs and edge-case handling, refer to [Metrics Methodology](docs/metrics-methodology.md).*
@@ -94,7 +94,7 @@ The dashboard provides a decoupled visual interface consuming exclusively `Pipel
 
 1. **📊 Market Overview:** Macro sample metrics, views bar charts, donut shares, channels table, and stacked format distributions.
 2. **🎬 Video Explorer:** Granular scatter plots over publication timeline, format filtering (Shorts, Long-form, Unknown), and individual video statistics.
-3. **📈 Growth Signals:** Interactive inter-snapshot comparison, measuring daily pace $$R$$, gross growth, audit clawbacks, and new uploads.
+3. **📈 Growth Signals:** Interactive inter-snapshot comparison, measuring daily pace $$R$$, gross growth, negative view count adjustments, and new uploads.
 4. **🤖 Strategic AI Report:** Evidence-backed strategic diagnosis rendered in 4 mandatory blocks: *Observed Data*, *Performance Patterns*, *Strategic Hypotheses*, and *Study Limitations*.
 
 ---
@@ -129,12 +129,11 @@ DATABASE_PATH=youtube_tracker.db
 ```bash
 python -m venv .venv
 source .venv/bin/activate  # On Windows: .venv\Scripts\activate
-pip install -r requirements.txt
-pip install -e .
+pip install -e ".[dev]"
 ```
 
 ### 4. Launch the Application
-- **Windows Shortcut:** Double-click [`START_TRACKER.bat`](file:///d:/projetos/EchoScope%20AI/START_TRACKER.bat)
+- **Windows Shortcut:** Double-click [`START_TRACKER.bat`](START_TRACKER.bat)
 - **Direct Terminal:**
 ```bash
 streamlit run app.py
@@ -142,28 +141,28 @@ streamlit run app.py
 
 ---
 
-## 🧪 Testing & Quality Assurance
+## 🧪 Testing & Local Quality Assurance
 
-EchoScope AI enforces comprehensive quality gates:
+EchoScope AI enforces automated quality gates through a local QA verification framework (`quality.ps1`):
 
 ```bash
 # Run full offline test suite (Unit & Integration)
 pytest -v
 
-# Run local QA Engine in Fast Mode
+# Run local QA Engine in Fast Mode (Pre-delivery checks)
 powershell -ExecutionPolicy Bypass -File "$env:USERPROFILE\dev-tools\qa\quality.ps1" -Mode Fast
 
 # Run full QA Engine with statement & branch coverage, Bandit SAST, and pip-audit
 powershell -ExecutionPolicy Bypass -File "$env:USERPROFILE\dev-tools\qa\quality.ps1" -Mode Full
 ```
 
-### QA Gate Results
-- **Statements Coverage:** **95.00%**
-- **Branch Coverage:** **79.69%**
+### Local QA Gate Results
+- **Statements Coverage:** **95.03%**
+- **Branch Coverage:** **79.22%**
 - **Pyright Static Typing:** **0 Errors, 0 Warnings**
-- **Bandit SAST Security:** **0 Vulnerabilities (3,038 lines audited)**
+- **Bandit SAST Security:** **0 Vulnerabilities (3,463 lines audited)**
 - **pip-audit Dependency Audit:** **0 Known Vulnerabilities**
-- **Test Suite:** **68/68 Tests Passing (100% Offline with Mocks)**
+- **Test Suite:** **70/70 Tests Passing (100% Offline with Mocks)**
 
 ---
 

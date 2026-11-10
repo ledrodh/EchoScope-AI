@@ -44,7 +44,7 @@ def render_channel_kpis(metrics: ChannelSummaryMetrics) -> None:
         st.metric(
             label="VSR (Views/Subs)",
             value=vsr_val,
-            help="Views-to-Subscriber Ratio (audience reach beyond subscriber base)",
+            help="Views-to-Subscriber Ratio (sampled views relative to subscriber count)",
         )
 
     with c4:

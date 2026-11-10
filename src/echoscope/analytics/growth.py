@@ -49,7 +49,7 @@ def compute_channel_growth(
     """Computes growth velocity (R) and Delta V between two point-in-time snapshots.
 
     Separates:
-    - Gross positive growth vs negative fraud sweeps.
+    - Gross positive growth vs negative view count adjustments.
     - True newly published uploads (published after date_older) vs historical videos missing from T0.
     """
     dt_older = date_older.date() if isinstance(date_older, datetime) else date_older

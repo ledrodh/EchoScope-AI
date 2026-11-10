@@ -435,9 +435,9 @@ def main() -> None:
                             )
                         with col_k3:
                             render_metric_card(
-                                "Negative Adjustments (-)",
+                                "Negative View Count Adjustments (-)",
                                 f"-{growth.negative_adjustments_views:,}",
-                                help_text="Views expunged by YouTube audit or fraud sweeps",
+                                help_text="Absolute sum of view count decreases across comparable videos between snapshots",
                             )
                         with col_k4:
                             render_metric_card(

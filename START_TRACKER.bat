@@ -10,41 +10,52 @@ echo       ECHOSCOPE AI - YOUTUBE INTELLIGENCE
 echo ==================================================
 echo.
 
-:: --- 1. DEPENDENCY CHECK ---
-if exist "install.lock" (
-    echo [OK] Dependencies already installed. Launching...
+:: --- 1. VIRTUAL ENVIRONMENT & DEPENDENCIES ---
+if exist ".venv\Scripts\streamlit.exe" (
+    echo [OK] Virtual environment detected. Launching...
     goto START_APP
 ) else (
-    echo [!] First run detected.
-    echo [!] Installing necessary libraries (This might take a while)...
+    echo [!] First run or incomplete virtual environment detected.
+    echo [!] Setting up Python environment and installing EchoScope AI...
     echo.
-    
+
     :: Check if Python is installed
     python --version >nul 2>&1
     if %errorlevel% neq 0 (
         color 0E
-        echo [ERROR] Python not found! Please install Python 3.10+ and try again.
+        echo [ERROR] Python not found! Please install Python 3.12+ and try again.
         echo.
         pause
-        exit
+        exit /b 1
     )
 
-    :: Install dependencies
-    pip install -r requirements.txt
-    
-    :: If installation fails, pause to show error
+    :: Create virtual environment if missing
+    if not exist ".venv\Scripts\python.exe" (
+        echo [*] Creating virtual environment in .venv...
+        python -m venv .venv
+        if %errorlevel% neq 0 (
+            color 0E
+            echo [ERROR] Failed to create virtual environment.
+            pause
+            exit /b 1
+        )
+    )
+
+    :: Upgrade pip and install package in editable mode from pyproject.toml
+    echo [*] Installing package and dependencies via pyproject.toml...
+    ".venv\Scripts\python.exe" -m pip install --upgrade pip
+    ".venv\Scripts\pip.exe" install -e .
+
     if %errorlevel% neq 0 (
         color 0E
         echo.
-        echo [ERROR] Failed to install dependencies. Check your internet connection or Python installation.
+        echo [ERROR] Failed to install dependencies. Check your internet connection or Python 3.12+ installation.
         pause
-        exit
+        exit /b 1
     )
 
-    :: Create lock file to skip installation next time
-    echo Installed on %date% at %time% > install.lock
     echo.
-    echo [SUCCESS] All set!
+    echo [SUCCESS] Environment ready!
 )
 
 :: --- 2. START APPLICATION ---
@@ -54,7 +65,7 @@ echo [1] Opening Dashboard...
 echo [2] Press CTRL+C in this window to stop the server.
 echo.
 
-streamlit run app.py
+".venv\Scripts\streamlit.exe" run app.py
 
 :: If Streamlit closes with error, hold screen
 if %errorlevel% neq 0 (

@@ -1,6 +1,12 @@
-fastapi>=0.115.0
-uvicorn>=0.32.0
-pydantic>=2.10.0
-httpx>=0.28.0
-pytest>=9.0.0
-pytest-cov>=6.0.0
+# Runtime dependencies aligned with pyproject.toml
+# For full development installation (including CLI entry point and dev tools), run: pip install -e ".[dev]"
+streamlit>=1.38.0
+pandas>=2.2.0
+plotly>=5.24.0
+streamlit-aggrid>=1.1.0
+google-api-python-client>=2.140.0
+google-genai>=1.0.0
+isodate>=0.7.2
+pydantic>=2.8.0
+pydantic-settings>=2.4.0
+python-dotenv>=1.0.1

@@ -20,7 +20,7 @@ $$\text{Median Views} = \tilde{x} = \text{middle element of sorted views } [v_1,
 
 $$VSR = \frac{\sum_{i=1}^n \text{Views}_i}{\text{Subscribers}}$$
 
-- **Purpose:** Indicates whether channel viewership is driven primarily by subscriber loyalty ($$VSR \approx 0.1 - 0.5$$) or by non-subscriber algorithmic discovery ($$VSR > 1.0$$).
+- **Purpose:** Expresses the empirical view volume of the sampled videos as a multiple of the channel's subscriber count, normalizing cross-channel comparisons across different audience scales. It does not isolate subscriber vs. non-subscriber traffic sources.
 - **Hidden Subscriber Policy:** If a channel owner conceals their subscriber count on YouTube, public API returns `NULL`. EchoScope preserves `NULL` and displays `"Hidden"`. It **never** artificially substitutes `0` or `1`, which would corrupt division and produce misleading ratios.
 
 ---
@@ -66,10 +66,10 @@ $$\text{Net Growth Views} = \sum_{i \in C} \Delta V_i$$
 
 $$\text{Daily Growth Velocity } R = \frac{\text{Net Growth Views}}{\Delta t}$$
 
-### 2. Anomaly Separation: Fraud Sweeps vs Growth
-YouTube regularly audits and purges illegitimate or bot views:
+### 2. Anomaly Separation: Negative View Count Adjustments vs Growth
+Public YouTube video view counts can occasionally decrease between snapshots due to platform metric reconciliations, delayed deduplication, or counter revisions:
 - **Gross Positive Growth:** $$\sum_{i \in C, \Delta V_i > 0} \Delta V_i$$
-- **Negative Adjustments (Audits):** $$\sum_{i \in C, \Delta V_i < 0} |\Delta V_i|$$
+- **Negative View Count Adjustments:** $$\sum_{i \in C, \Delta V_i < 0} |\Delta V_i|$$
 
 ### 3. Upload Boundary Isolation
 Videos present in $$T_1$$ but absent from $$T_0$$ are classified based on publication date:

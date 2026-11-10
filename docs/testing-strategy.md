@@ -1,6 +1,6 @@
 # 🧪 Testing Strategy & Quality Assurance Framework
 
-EchoScope AI maintains a comprehensive offline test suite verified by local and continuous quality gates.
+EchoScope AI maintains a comprehensive offline test suite verified by an automated local QA Engine (`quality.ps1`).
 
 ---
 
@@ -14,10 +14,10 @@ The codebase is governed by the local QA Engine (`quality.ps1`) enforcing strict
 | **Linting & Code Style** | Ruff (`py312`) | Zero errors, import sorting (`I001`) | ✅ **0 Errors** |
 | **Formatting** | Ruff Formatter | 100 char line limit, standard formatting | ✅ **38/38 Formatted** |
 | **Static Type Checking** | Pyright | Strict/Standard mode across `src`, `tests`, `ui` | ✅ **0 Errors, 0 Warnings** |
-| **Statement Coverage** | Coverage.py (`pytest-cov`) | Minimum 70.0% | ✅ **95.00%** |
-| **Branch Coverage** | Coverage.py (`pytest-cov`) | Target $\ge 75.0\%$ in core | ✅ **79.69%** (255/320 branches) |
-| **Combined Coverage** | Coverage.py (`pytest-cov`) | Harmonic line/branch balance | ✅ **92.96%** |
-| **Security SAST** | Bandit | Zero High/Medium severity issues | ✅ **0 Issues (3,038 lines)** |
+| **Statement Coverage** | Coverage.py (`pytest-cov`) | Minimum 70.0% | ✅ **95.03%** |
+| **Branch Coverage** | Coverage.py (`pytest-cov`) | Target $\ge 75.0\%$ in core | ✅ **79.22%** (263/332 branches) |
+| **Combined Coverage** | Coverage.py (`pytest-cov`) | Harmonic line/branch balance | ✅ **92.94%** |
+| **Security SAST** | Bandit | Zero High/Medium severity issues | ✅ **0 Issues (3,463 lines)** |
 | **Dependency Auditing** | pip-audit | Zero known vulnerable packages | ✅ **0 Vulnerabilities** |
 
 ---
@@ -35,7 +35,7 @@ tests/
     ├── test_cli.py               # Headless CLI commands, exit codes (0, 1, 2, 3), offline use
     ├── test_config.py            # Pydantic Settings precedence (.env, secrets.toml)
     ├── test_database.py          # Foreign keys, snapshot isolation, WAL backup, purge
-    ├── test_growth.py            # Growth signals, fraud sweep negative adjustments
+    ├── test_growth.py            # Growth signals, negative view count adjustments
     ├── test_metrics.py           # Median, percentiles, VPD, VSR, likes-to-views ratio
     ├── test_pipeline_service.py  # Orchestrator, partial tolerance, AST boundary inspection
     └── test_youtube_client.py    # Quota handling, typed HTTP errors, pagination order

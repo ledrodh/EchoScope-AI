@@ -1,0 +1,25 @@
+schema_version: 1
+
+language: python
+framework: streamlit
+project_type: cli
+
+profile: standard
+
+source_paths:
+  - src
+test_paths:
+  - tests
+
+thresholds:
+  coverage:
+    line_min: null
+    branch_min: null
+
+security:
+  fail_on_secrets: true
+  vulnerability_gate: null
+  allowed_exceptions: []
+
+api_testing:
+  enabled: false

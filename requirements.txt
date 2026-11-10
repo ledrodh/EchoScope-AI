@@ -1,7 +1,6 @@
-streamlit
-pandas
-plotly
-streamlit-aggrid
-google-api-python-client
-google-generativeai
-isodate
+fastapi>=0.115.0
+uvicorn>=0.32.0
+pydantic>=2.10.0
+httpx>=0.28.0
+pytest>=9.0.0
+pytest-cov>=6.0.0

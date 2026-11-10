@@ -1,0 +1,12 @@
+{
+  "include": ["src", "tests", "ui"],
+  "exclude": [
+    "**/node_modules",
+    "**/__pycache__",
+    ".venv"
+  ],
+  "venvPath": "d:\\projetos\\EchoScope AI",
+  "venv": ".venv",
+  "pythonVersion": "3.12",
+  "typeCheckingMode": "standard"
+}

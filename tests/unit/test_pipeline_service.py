@@ -521,12 +521,12 @@ def test_architecture_boundaries_ast_inspection():
             if isinstance(node, ast.Import):
                 for alias in node.names:
                     for forbidden in forbidden_modules:
-                        assert not alias.name.startswith(
-                            forbidden
-                        ), f"Forbidden import '{alias.name}' detected in UI file {py_file.name}:{node.lineno}"
+                        msg = f"Forbidden import '{alias.name}' in {py_file.name}:{node.lineno}"
+                        assert not alias.name.startswith(forbidden), msg
             elif isinstance(node, ast.ImportFrom):
                 if node.module:
                     for forbidden in forbidden_modules:
-                        assert not node.module.startswith(
-                            forbidden
-                        ), f"Forbidden from-import '{node.module}' detected in UI file {py_file.name}:{node.lineno}"
+                        msg = (
+                            f"Forbidden from-import '{node.module}' in {py_file.name}:{node.lineno}"
+                        )
+                        assert not node.module.startswith(forbidden), msg

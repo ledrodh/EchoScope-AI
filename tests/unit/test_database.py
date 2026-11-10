@@ -157,16 +157,12 @@ def test_multi_snapshot_isolation(memory_db):
     # Query Macro Data for Run 1
     df1 = repo.get_run_macro_data(run1.run_id)
     assert len(df1) == 1
-    assert (
-        df1.iloc[0]["Total_Views"] == 100000
-    ), "Run 1 must show exactly 100,000 views, not sum with Run 2!"
+    assert df1.iloc[0]["Total_Views"] == 100000, "Run 1 must show exactly 100,000 views!"
 
     # Query Macro Data for Run 2
     df2 = repo.get_run_macro_data(run2.run_id)
     assert len(df2) == 1
-    assert (
-        df2.iloc[0]["Total_Views"] == 120000
-    ), "Run 2 must show exactly 120,000 views, not sum with Run 1!"
+    assert df2.iloc[0]["Total_Views"] == 120000, "Run 2 must show exactly 120,000 views!"
 
 
 def test_partial_run_support(memory_db):

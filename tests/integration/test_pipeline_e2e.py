@@ -131,7 +131,7 @@ def test_pipeline_e2e_full_lifecycle(test_db):
             performance_patterns=[
                 PerformancePattern(
                     pattern_title="Consistent Long-Form Reach",
-                    observation="Channel sustains above-average views with steady audience retention.",
+                    observation="Channel sustains above-average views across long-form publications.",
                     supporting_metric_ids=["median_views", "average_views"],
                 )
             ],
@@ -191,7 +191,20 @@ def test_pipeline_e2e_full_lifecycle(test_db):
     channels_db = {row[0]: (row[1], row[2]) for row in cursor.fetchall()}
     assert channels_db["UC_ALPHA"] == ("completed", 20)
     assert channels_db["UC_BETA"] == ("completed", 15)
-    assert channels_db["FailingNetwork"][0] == "failed"
+    assert "FailingNetwork" not in channels_db
+
+    # Ensure unresolved channel did not pollute the canonical channels dimension
+    cursor.execute("SELECT COUNT(*) FROM channels WHERE channel_id = 'FailingNetwork'")
+    assert cursor.fetchone()[0] == 0
+
+    # Verify failed input attempt was tracked in analysis_run_channel_inputs
+    cursor.execute(
+        "SELECT status, error_code, resolved_channel_id FROM analysis_run_channel_inputs WHERE run_id = ? AND requested_identifier = '@FailingNetwork'",
+        (run_id,),
+    )
+    attempt_row = cursor.fetchone()
+    assert attempt_row is not None
+    assert (attempt_row[0], attempt_row[1], attempt_row[2]) == ("failed", "NetworkError", None)
 
     # 5. Calculate and verify statistical metrics
     metrics = service.calculate_run_metrics(run_id)

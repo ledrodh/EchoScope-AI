@@ -242,7 +242,16 @@ def main() -> None:
             f"Execution run `{active_run_id}` ended with status **FAILED**. No video metrics were collected."
         )
         run_chans = service.get_run_channels(active_run_id)
-        if run_chans:
+        input_attempts = service.get_run_input_attempts(active_run_id)
+        if input_attempts:
+            st.markdown("#### Channel Collection Attempts")
+            for att in input_attempts:
+                err = att.get("error_code") or "Unknown error"
+                msg = f" — {att['error_message']}" if att.get("error_message") else ""
+                st.markdown(
+                    f"- **{att.get('requested_identifier')}**: ❌ `{att.get('status')}` (`{err}`){msg}"
+                )
+        elif run_chans:
             st.markdown("#### Channel Collection Breakdown")
             for ch in run_chans:
                 err = ch.get("error_code") or "Unknown error"
@@ -424,7 +433,7 @@ def main() -> None:
                         with col_k1:
                             render_metric_card(
                                 "Daily Velocity (R)",
-                                f"{growth.daily_growth_velocity:,.0f} views/day",
+                                f"{growth.daily_growth_velocity:,.0f}/day",
                                 help_text="Net daily pace of views gained across comparable videos",
                             )
                         with col_k2:
@@ -435,9 +444,9 @@ def main() -> None:
                             )
                         with col_k3:
                             render_metric_card(
-                                "Negative View Count Adjustments (-)",
+                                "Negative Adjustments",
                                 f"-{growth.negative_adjustments_views:,}",
-                                help_text="Absolute sum of view count decreases across comparable videos between snapshots",
+                                help_text="Absolute sum of negative view count adjustments across comparable videos between snapshots",
                             )
                         with col_k4:
                             render_metric_card(
@@ -501,7 +510,14 @@ def main() -> None:
                                 # 1. Observed Data
                                 st.markdown("#### 1. Observed Data & Verified Metrics")
                                 for obs in report.observed_data:
-                                    st.info(f"**[{obs.metric_id}]**: {obs.interpretation}")
+                                    val_badge = (
+                                        f" · **Verified Value:** `{obs.verified_value}`"
+                                        if obs.verified_value
+                                        else ""
+                                    )
+                                    st.info(
+                                        f"**[{obs.metric_id}]**{val_badge}\n\n{obs.interpretation}"
+                                    )
 
                                 # 2. Performance Patterns
                                 st.markdown("#### 2. Performance Patterns Identified")

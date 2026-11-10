@@ -63,13 +63,13 @@ def test_resolve_channel_success():
 
 
 def test_resolve_channel_artist_detection():
-    """Validates that Official Artist Channels are identified via topicCategories."""
+    """Validates that music topicCategories do not falsely deduce Official Artist Channel status."""
     mock_service = MagicMock()
     mock_service.channels().list().execute.return_value = {
         "items": [
             {
                 "id": "UC_ARTIST_123",
-                "snippet": {"title": "Artist Channel", "customUrl": "@Artist"},
+                "snippet": {"title": "Music Commentary Channel", "customUrl": "@MusicFan"},
                 "contentDetails": {"relatedPlaylists": {"uploads": "UU_ARTIST_123"}},
                 "topicDetails": {"topicCategories": ["https://en.wikipedia.org/wiki/Music"]},
             }
@@ -77,8 +77,8 @@ def test_resolve_channel_artist_detection():
     }
 
     client = YouTubeClient(service=mock_service)
-    resolved = client.resolve_channel("@Artist")
-    assert resolved.is_artist_channel
+    resolved = client.resolve_channel("@MusicFan")
+    assert resolved.is_artist_channel is None
 
 
 def test_resolve_channel_hidden_subscribers():

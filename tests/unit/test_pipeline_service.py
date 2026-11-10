@@ -149,6 +149,47 @@ def test_collect_channels_partial_failure_tolerance(mem_db, mock_youtube, mock_a
     assert valid_record["status"] == "completed"
     assert valid_record["videos_collected"] == 1
 
+    # Unresolved channel MUST NOT pollute the channels dimension with synthetic IDs
+    dim_handles = {c["handle"] for c in service.list_channels()}
+    assert "@NotFoundChannel" not in dim_handles
+    assert "NotFoundChannel" not in {c["channel_id"] for c in service.list_channels()}
+
+    # Input attempts table tracks unresolved failures cleanly
+    attempts = service.get_run_input_attempts(run_id)
+    failed_att = next(a for a in attempts if a["requested_identifier"] == "@NotFoundChannel")
+    assert failed_att["status"] == "failed"
+    assert failed_att["error_code"] == "ChannelNotFoundError"
+    assert failed_att["resolved_channel_id"] is None
+
+
+def test_collect_channels_post_resolution_failure_marks_canonical_channel(
+    mem_db, mock_youtube, mock_ai
+):
+    """When resolve_channel succeeds and fetch fails (e.g. QuotaExceeded), marks the real channel_id."""
+    from echoscope.api.youtube_client import ResolvedChannel
+
+    service = PipelineService(conn=mem_db, youtube_client=mock_youtube, ai_client=mock_ai)
+    run_id = service.create_analysis_run(date(2026, 1, 1), date(2026, 1, 31))
+
+    mock_youtube.resolve_channel.side_effect = None
+    mock_youtube.resolve_channel.return_value = ResolvedChannel(
+        channel_id="UC_CANONICAL_99",
+        handle="@CanonicalChannel",
+        title="Canonical Channel",
+        uploads_playlist_id="UU_CANONICAL_99",
+        subscribers_count=1000,
+    )
+    mock_youtube.fetch_channel_videos_for_period.side_effect = QuotaExceededError("Quota exceeded!")
+
+    result = service.collect_channels(run_id, ["@CanonicalChannel"])
+    assert result["status"] == "failed"
+
+    run_channels = service.get_run_channels(run_id)
+    assert len(run_channels) == 1
+    assert run_channels[0]["channel_id"] == "UC_CANONICAL_99"
+    assert run_channels[0]["status"] == "failed"
+    assert run_channels[0]["error_code"] == "QuotaExceededError"
+
 
 def test_collect_channels_quota_exceeded_handling(mem_db, mock_youtube, mock_ai):
     service = PipelineService(conn=mem_db, youtube_client=mock_youtube, ai_client=mock_ai)
@@ -233,6 +274,17 @@ def test_compare_channel_snapshots_across_runs(mem_db, mock_youtube, mock_ai):
     mock_youtube.fetch_channel_videos_for_period.side_effect = _mock_fetch_t1
     service.collect_channels(run_t1, ["@GrowthTarget"])
 
+    # Assign explicit snapshot timestamps 10 days apart (even if period_end is identical!)
+    mem_db.execute(
+        "UPDATE channel_snapshots SET collected_at = '2026-03-01T10:00:00+00:00' WHERE run_id = ?",
+        (run_t0,),
+    )
+    mem_db.execute(
+        "UPDATE channel_snapshots SET collected_at = '2026-03-11T10:00:00+00:00' WHERE run_id = ?",
+        (run_t1,),
+    )
+    mem_db.commit()
+
     growth = service.compare_channel_snapshots(
         channel_id="UC_GrowthTarget",
         run_id_older=run_t0,
@@ -242,8 +294,65 @@ def test_compare_channel_snapshots_across_runs(mem_db, mock_youtube, mock_ai):
     assert isinstance(growth, ChannelGrowthComparison)
     assert growth.comparable_videos_count == 1
     assert growth.gross_positive_growth == 30000
-    assert growth.days_between_runs == 10
+    assert growth.days_between_runs == 10.0
     assert growth.daily_growth_velocity == 3000.0
+
+
+def test_growth_signals_with_identical_period_end_uses_snapshot_timestamps(
+    mem_db, mock_youtube, mock_ai
+):
+    """Two runs covering the exact same period_end use real channel_snapshots.collected_at."""
+    service = PipelineService(conn=mem_db, youtube_client=mock_youtube, ai_client=mock_ai)
+
+    run_t0 = service.create_analysis_run(date(2026, 1, 1), date(2026, 2, 28))
+    service.collect_channels(run_t0, ["@SameWindow"])
+
+    run_t1 = service.create_analysis_run(date(2026, 1, 1), date(2026, 2, 28))
+    service.collect_channels(run_t1, ["@SameWindow"])
+
+    # Simulate 10 real days between collections despite identical period_end
+    mem_db.execute(
+        "UPDATE channel_snapshots SET collected_at = '2026-03-01T00:00:00+00:00' WHERE run_id = ?",
+        (run_t0,),
+    )
+    mem_db.execute(
+        "UPDATE channel_snapshots SET collected_at = '2026-03-11T00:00:00+00:00' WHERE run_id = ?",
+        (run_t1,),
+    )
+    mem_db.execute(
+        "UPDATE video_snapshots SET views_count = 70000 WHERE run_id = ? AND channel_id = 'UC_SameWindow'",
+        (run_t1,),
+    )
+    mem_db.commit()
+
+    growth = service.compare_channel_snapshots("UC_SameWindow", run_t0, run_t1)
+    assert growth.days_between_runs == 10.0
+    assert growth.gross_positive_growth == 20000
+    assert growth.daily_growth_velocity == 2000.0
+
+
+def test_vpd_uses_channel_specific_collected_at(mem_db, mock_youtube, mock_ai):
+    """Ensures VPD is anchored to each channel's own channel_snapshots.collected_at."""
+    service = PipelineService(conn=mem_db, youtube_client=mock_youtube, ai_client=mock_ai)
+    run_id = service.create_analysis_run(date(2026, 1, 1), date(2026, 1, 31))
+    service.collect_channels(run_id, ["@ChannelFast", "@ChannelLate"])
+
+    # Video published on 2026-01-15 with 50,000 views
+    # Fast collected on 2026-01-20 (5 days elapsed -> 10,000 VPD)
+    # Late collected on 2026-01-25 (10 days elapsed -> 5,000 VPD)
+    mem_db.execute(
+        "UPDATE channel_snapshots SET collected_at = '2026-01-20T00:00:00+00:00' WHERE run_id = ? AND channel_id = 'UC_ChannelFast'",
+        (run_id,),
+    )
+    mem_db.execute(
+        "UPDATE channel_snapshots SET collected_at = '2026-01-25T00:00:00+00:00' WHERE run_id = ? AND channel_id = 'UC_ChannelLate'",
+        (run_id,),
+    )
+    mem_db.commit()
+
+    metrics_by_id = {m.channel_id: m for m in service.calculate_run_metrics(run_id)}
+    assert metrics_by_id["UC_ChannelFast"].median_views_per_day == 10000.0
+    assert metrics_by_id["UC_ChannelLate"].median_views_per_day == 5000.0
 
 
 def test_generate_channel_report(mem_db, mock_youtube, mock_ai):

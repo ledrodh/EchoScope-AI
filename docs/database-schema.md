@@ -10,6 +10,7 @@ EchoScope AI uses a normalized SQLite relational schema configured with **Write-
 erDiagram
     channels ||--o{ analysis_run_channels : "participates in"
     analysis_runs ||--o{ analysis_run_channels : "contains"
+    analysis_runs ||--o{ analysis_run_channel_inputs : "logs attempts"
     analysis_run_channels ||--o{ channel_snapshots : "records"
     channels ||--o{ videos : "owns"
     videos ||--o{ video_snapshots : "tracks"
@@ -38,6 +39,17 @@ erDiagram
         text status
         integer videos_collected
         text error_code
+    }
+
+    analysis_run_channel_inputs {
+        integer id PK
+        text run_id FK
+        text requested_identifier
+        text resolved_channel_id FK
+        text status
+        text error_code
+        text error_message
+        datetime created_at
     }
 
     channel_snapshots {
@@ -88,11 +100,14 @@ erDiagram
 - `metrics_version` (`TEXT DEFAULT '1.0'`).
 
 ### `analysis_run_channels` (Associative Bridge)
-- `PRIMARY KEY (run_id, channel_id)`: Bridges execution runs with channels, allowing independent tracking of each channel's outcome within a batch (`'pending'`, `'completed'`, `'failed'`, `'empty'`).
-- `error_code` (`TEXT`): Records specific typed API error (`QuotaExceededError`, `ChannelNotFoundError`, `NetworkError`).
+- `PRIMARY KEY (run_id, channel_id)`: Bridges execution runs with resolved channels, allowing independent tracking of each channel's outcome within a batch (`'pending'`, `'completed'`, `'failed'`, `'empty'`).
+- `error_code` (`TEXT`): Records specific typed API error (`QuotaExceededError`, `NetworkError`).
+
+### `analysis_run_channel_inputs` (Input Audit Log)
+- `UNIQUE (run_id, requested_identifier)`: Logs every user-supplied channel identifier attempt (`resolved_channel_id` nullable). Prevents unresolved or invalid identifiers from polluting the canonical `channels` dimension with synthetic rows.
 
 ### `channel_snapshots` (Fact)
-- `UNIQUE (run_id, channel_id)`: Point-in-time subscriber snapshot.
+- `UNIQUE (run_id, channel_id)`: Point-in-time subscriber snapshot (`collected_at` timestamp used as the authoritative baseline for VPD and Growth Signals).
 - `subscribers_count` (`INTEGER NULL`): Preserves `NULL` when creators conceal public subscriber counts.
 
 ### `videos` (Dimension)

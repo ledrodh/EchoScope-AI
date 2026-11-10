@@ -5,7 +5,6 @@
     "**/__pycache__",
     ".venv"
   ],
-  "venvPath": "d:\\projetos\\EchoScope AI",
   "venv": ".venv",
   "pythonVersion": "3.12",
   "typeCheckingMode": "standard"

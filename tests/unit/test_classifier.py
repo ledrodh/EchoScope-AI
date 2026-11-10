@@ -110,3 +110,34 @@ def test_official_artist_channel_cutoff_rule():
         is_artist_channel=True,
     )
     assert res_oac_post.format_category == "Shorts"
+
+
+def test_indeterminate_channel_type_returns_unknown_in_transition_window():
+    """When OAC status is None, 61s-180s videos in the 2024-10-15..2025-12-08 window return Unknown."""
+    # Ambiguous window -> Unknown
+    res_ambiguous = classify_video_format(
+        duration_seconds=90,
+        published_at=date(2025, 6, 1),
+        aspect_ratio="vertical",
+        is_artist_channel=None,
+    )
+    assert res_ambiguous.format_category == "Unknown"
+    assert res_ambiguous.classification_method == "indeterminate_channel_type"
+
+    # Pre-Oct 15, 2024 (> 60s) -> universally Long-form even if OAC is None
+    res_pre = classify_video_format(
+        duration_seconds=90,
+        published_at=date(2024, 5, 1),
+        aspect_ratio="vertical",
+        is_artist_channel=None,
+    )
+    assert res_pre.format_category == "Long-form"
+
+    # Post-Dec 8, 2025 (<= 180s vertical) -> universally Shorts even if OAC is None
+    res_post = classify_video_format(
+        duration_seconds=90,
+        published_at=date(2026, 2, 1),
+        aspect_ratio="vertical",
+        is_artist_channel=None,
+    )
+    assert res_post.format_category == "Shorts"

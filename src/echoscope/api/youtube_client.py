@@ -76,7 +76,7 @@ class ResolvedChannel:
     title: str
     uploads_playlist_id: str
     subscribers_count: int | None
-    is_artist_channel: bool = False
+    is_artist_channel: bool | None = None
 
 
 class YouTubeClient:
@@ -192,9 +192,10 @@ class YouTubeClient:
             custom_url = item["snippet"].get("customUrl", f"@{clean}")
             uploads_pl = item["contentDetails"]["relatedPlaylists"]["uploads"]
 
-            # Detect Official Artist Channel (topicDetails or title badges if present)
-            topics = item.get("topicDetails", {}).get("topicCategories", [])
-            is_artist = any("music" in t.lower() for t in topics)
+            # YouTube Data API v3 channels.list does not expose an authoritative
+            # Official Artist Channel (OAC) boolean flag. Do NOT infer OAC status from
+            # Wikipedia topicCategories (which reflect video content topics, not OAC status).
+            is_artist: bool | None = None
 
             # Respect hidden subscriber count policy
             stats = item.get("statistics", {})

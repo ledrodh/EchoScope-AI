@@ -151,10 +151,63 @@ def test_growth_signals_empty_dataframes_and_datetime_objects():
         channel_id="UC_DATES",
         run_id_older="r0",
         run_id_newer="r1",
-        date_older=date(2026, 1, 1),
-        date_newer=date(2026, 1, 15),
+        date_older=dt_older,
+        date_newer=dt_newer,
         videos_df_older=pd.DataFrame(),
         videos_df_newer=df_t1,
     )
     assert growth_dates.new_videos_published_count == 2
     assert growth_dates.unmatched_historical_videos_count == 1
+
+
+def test_growth_signals_fractional_seconds_and_rejects_non_positive_delta():
+    """Validates exact (T1-T0)/86400 calculation and rejection when T1 <= T0."""
+    from datetime import UTC, datetime
+
+    import pytest
+
+    df_t0 = pd.DataFrame(
+        {"video_id": ["v1"], "title": ["V1"], "views": [1000], "date": ["2026-01-01"]}
+    )
+    df_t1 = pd.DataFrame(
+        {"video_id": ["v1"], "title": ["V1"], "views": [4000], "date": ["2026-01-01"]}
+    )
+
+    # 36 hours apart = 1.5 days; +3000 views / 1.5 days = 2000.0 views/day
+    t0 = datetime(2026, 3, 1, 0, 0, 0, tzinfo=UTC)
+    t1 = datetime(2026, 3, 2, 12, 0, 0, tzinfo=UTC)
+    growth = compute_channel_growth(
+        channel_id="UC_FRAC",
+        run_id_older="r0",
+        run_id_newer="r1",
+        date_older=t0,
+        date_newer=t1,
+        videos_df_older=df_t0,
+        videos_df_newer=df_t1,
+    )
+    assert growth.days_between_runs == 1.5
+    assert growth.daily_growth_velocity == 2000.0
+
+    # Equal timestamps -> ValueError
+    with pytest.raises(ValueError, match="must be strictly greater"):
+        compute_channel_growth(
+            channel_id="UC_EQ",
+            run_id_older="r0",
+            run_id_newer="r1",
+            date_older=t0,
+            date_newer=t0,
+            videos_df_older=df_t0,
+            videos_df_newer=df_t1,
+        )
+
+    # Inverted timestamps -> ValueError
+    with pytest.raises(ValueError, match="must be strictly greater"):
+        compute_channel_growth(
+            channel_id="UC_INV",
+            run_id_older="r0",
+            run_id_newer="r1",
+            date_older=t1,
+            date_newer=t0,
+            videos_df_older=df_t0,
+            videos_df_newer=df_t1,
+        )

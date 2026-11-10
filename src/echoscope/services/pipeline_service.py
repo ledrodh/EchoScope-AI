@@ -20,7 +20,6 @@ from echoscope.api.youtube_client import (
     EchoScopeAPIError,
     QuotaExceededError,
     YouTubeClient,
-    normalize_handle,
 )
 from echoscope.config import get_settings
 from echoscope.database.connection import get_db_connection
@@ -156,8 +155,10 @@ class PipelineService:
             if not ch_input:
                 continue
 
+            resolved_channel_id: str | None = None
             try:
                 resolved = self.youtube_client.resolve_channel(ch_input)
+                resolved_channel_id = resolved.channel_id
                 channel = Channel(
                     channel_id=resolved.channel_id,
                     handle=resolved.handle,
@@ -190,15 +191,36 @@ class PipelineService:
                         videos=videos,
                         snapshots=vid_snapshots,
                     )
+                    self.repository.record_channel_input_attempt(
+                        run_id=run_id,
+                        requested_identifier=ch_input,
+                        resolved_channel_id=resolved.channel_id,
+                        status="completed",
+                    )
                 else:
                     self.repository.associate_channel_run(run_id, channel, status="empty")
+                    self.repository.record_channel_input_attempt(
+                        run_id=run_id,
+                        requested_identifier=ch_input,
+                        resolved_channel_id=resolved.channel_id,
+                        status="empty",
+                    )
 
                 successful_channels.append(resolved.handle)
 
             except QuotaExceededError as q_err:
-                # Quota exhaustion affects all subsequent channels
-                fallback_ch_id = normalize_handle(ch_input)
-                self.repository.mark_channel_failed(run_id, fallback_ch_id, "QuotaExceededError")
+                if resolved_channel_id is not None:
+                    self.repository.mark_channel_failed(
+                        run_id, resolved_channel_id, "QuotaExceededError"
+                    )
+                self.repository.record_channel_input_attempt(
+                    run_id=run_id,
+                    requested_identifier=ch_input,
+                    resolved_channel_id=resolved_channel_id,
+                    status="failed",
+                    error_code="QuotaExceededError",
+                    error_message=str(q_err),
+                )
                 failed_channels.append(
                     {
                         "channel": ch_input,
@@ -208,23 +230,41 @@ class PipelineService:
                 )
                 break
             except EchoScopeAPIError as api_err:
-                fallback_ch_id = normalize_handle(ch_input)
-                self.repository.mark_channel_failed(run_id, fallback_ch_id, type(api_err).__name__)
+                err_code = type(api_err).__name__
+                if resolved_channel_id is not None:
+                    self.repository.mark_channel_failed(run_id, resolved_channel_id, err_code)
+                self.repository.record_channel_input_attempt(
+                    run_id=run_id,
+                    requested_identifier=ch_input,
+                    resolved_channel_id=resolved_channel_id,
+                    status="failed",
+                    error_code=err_code,
+                    error_message=str(api_err),
+                )
                 failed_channels.append(
                     {
                         "channel": ch_input,
                         "error": str(api_err),
-                        "error_code": type(api_err).__name__,
+                        "error_code": err_code,
                     }
                 )
             except Exception as ex:
-                fallback_ch_id = normalize_handle(ch_input)
-                self.repository.mark_channel_failed(run_id, fallback_ch_id, type(ex).__name__)
+                err_code = type(ex).__name__
+                if resolved_channel_id is not None:
+                    self.repository.mark_channel_failed(run_id, resolved_channel_id, err_code)
+                self.repository.record_channel_input_attempt(
+                    run_id=run_id,
+                    requested_identifier=ch_input,
+                    resolved_channel_id=resolved_channel_id,
+                    status="failed",
+                    error_code=err_code,
+                    error_message=str(ex),
+                )
                 failed_channels.append(
                     {
                         "channel": ch_input,
                         "error": str(ex),
-                        "error_code": type(ex).__name__,
+                        "error_code": err_code,
                     }
                 )
 
@@ -269,6 +309,7 @@ class PipelineService:
             subs_count = ch.get("subscribers_count")
 
             videos_df = self.repository.get_run_channel_videos(run_id, channel_id)
+            reference_collected_at = ch.get("collected_at") or run_info.get("started_at")
 
             ch_metrics = calculate_channel_metrics(
                 videos_df=videos_df,
@@ -277,7 +318,7 @@ class PipelineService:
                 subscribers_count=subs_count,
                 period_start=period_start,
                 period_end=period_end,
-                reference_collected_at=run_info.get("started_at"),
+                reference_collected_at=reference_collected_at,
             )
             metrics_list.append(ch_metrics)
 
@@ -308,7 +349,7 @@ class PipelineService:
         run_id_older: str,
         run_id_newer: str,
     ) -> ChannelGrowthComparison:
-        """Compares two snapshots of a single channel across distinct runs."""
+        """Compares two snapshots of a single channel across distinct runs using actual collection timestamps."""
         run_older = self.repository.get_run(run_id_older)
         if not run_older:
             raise ValueError(f"Older run '{run_id_older}' not found.")
@@ -317,18 +358,27 @@ class PipelineService:
         if not run_newer:
             raise ValueError(f"Newer run '{run_id_newer}' not found.")
 
+        snap_older = self.repository.get_channel_snapshot(run_id_older, channel_id)
+        if not snap_older or not snap_older.get("collected_at"):
+            raise ValueError(
+                f"Channel '{channel_id}' has no collected_at snapshot recorded in older run '{run_id_older}'."
+            )
+
+        snap_newer = self.repository.get_channel_snapshot(run_id_newer, channel_id)
+        if not snap_newer or not snap_newer.get("collected_at"):
+            raise ValueError(
+                f"Channel '{channel_id}' has no collected_at snapshot recorded in newer run '{run_id_newer}'."
+            )
+
         videos_older = self.repository.get_run_channel_videos(run_id_older, channel_id)
         videos_newer = self.repository.get_run_channel_videos(run_id_newer, channel_id)
-
-        date_older = _parse_date(run_older["period_end"])
-        date_newer = _parse_date(run_newer["period_end"])
 
         return compute_channel_growth(
             channel_id=channel_id,
             run_id_older=run_id_older,
             run_id_newer=run_id_newer,
-            date_older=date_older,
-            date_newer=date_newer,
+            date_older=snap_older["collected_at"],
+            date_newer=snap_newer["collected_at"],
             videos_df_older=videos_older,
             videos_df_newer=videos_newer,
         )
@@ -350,12 +400,14 @@ class PipelineService:
         channel = self.repository.get_channel(channel_id)
         handle = channel.handle if channel else channel_id
 
-        # Retrieve subscriber count from snapshot
+        # Retrieve subscriber count and channel collection timestamp from snapshot
         run_channels = self.repository.get_run_channels(run_id)
         subscribers_count: int | None = None
+        channel_collected_at: Any = None
         for r_ch in run_channels:
             if r_ch["channel_id"] == channel_id:
                 subscribers_count = r_ch.get("subscribers_count")
+                channel_collected_at = r_ch.get("collected_at")
                 if channel is None:
                     handle = r_ch["handle"]
                 break
@@ -368,7 +420,7 @@ class PipelineService:
             subscribers_count=subscribers_count,
             period_start=period_start,
             period_end=period_end,
-            reference_collected_at=run_info.get("started_at"),
+            reference_collected_at=channel_collected_at or run_info.get("started_at"),
         )
 
         top_videos = videos_df.to_dict(orient="records")[:top_n_videos]
@@ -397,6 +449,10 @@ class PipelineService:
     def get_run_channels(self, run_id: str) -> list[dict[str, Any]]:
         """Retrieves channels participating in a run."""
         return self.repository.get_run_channels(run_id)
+
+    def get_run_input_attempts(self, run_id: str) -> list[dict[str, Any]]:
+        """Retrieves all user-requested channel input attempts (including unresolved failures)."""
+        return self.repository.get_run_input_attempts(run_id)
 
     def get_channel_videos(self, run_id: str, channel_id: str) -> pd.DataFrame:
         """Retrieves video snapshots for a channel within a specific run."""
@@ -433,21 +489,22 @@ class PipelineService:
         t1_start = today - timedelta(days=30)
         t1_end = today
 
-        # 1. Run T0
+        # 1. Run T0 (collected 10 days ago)
+        t0_collected = now - timedelta(days=10)
         run0_id = f"demo_t0_{now.strftime('%m%d_%H%M%S')}"
         self.repository.create_run(
             AnalysisRun(
                 run_id=run0_id,
                 period_start=t0_start,
                 period_end=t0_end,
-                started_at=now - timedelta(days=1),
-                finished_at=now - timedelta(days=1),
+                started_at=t0_collected,
+                finished_at=t0_collected,
                 status="completed",
                 metrics_version="1.0",
             )
         )
 
-        # 2. Run T1
+        # 2. Run T1 (collected now)
         run1_id = f"demo_t1_{now.strftime('%m%d_%H%M%S')}"
         self.repository.create_run(
             AnalysisRun(
@@ -473,10 +530,20 @@ class PipelineService:
             self.repository.associate_channel_run(run0_id, ch, status="completed")
             self.repository.associate_channel_run(run1_id, ch, status="completed")
             self.repository.record_channel_snapshot(
-                ChannelSnapshot(run_id=run0_id, channel_id=ch_id, subscribers_count=subs_t0)
+                ChannelSnapshot(
+                    run_id=run0_id,
+                    channel_id=ch_id,
+                    subscribers_count=subs_t0,
+                    collected_at=t0_collected,
+                )
             )
             self.repository.record_channel_snapshot(
-                ChannelSnapshot(run_id=run1_id, channel_id=ch_id, subscribers_count=subs_t1)
+                ChannelSnapshot(
+                    run_id=run1_id,
+                    channel_id=ch_id,
+                    subscribers_count=subs_t1,
+                    collected_at=now,
+                )
             )
 
         # Videos for MrBeast

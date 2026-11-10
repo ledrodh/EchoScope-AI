@@ -176,7 +176,41 @@ def test_gemini_client_mock_successful_generation():
     assert report.channel_handle == "@TestAI"
     assert len(report.observed_data) == 1
     assert report.observed_data[0].metric_id == "median_views"
+    assert report.observed_data[0].verified_value == "4,200 (n=10)"
     assert len(report.study_limitations) == 2
+
+
+def test_gemini_client_rejects_contradictory_numeric_hallucination():
+    """Rejects reports whose free-text interpretation cites numbers contradicting Python's catalog."""
+    metrics = _sample_metrics()  # median_views is 4,200
+
+    contradictory_response = {
+        "channel_handle": "@TestAI",
+        "prompt_version": "1.0.0",
+        "model_used": "gemini-3.8-flash",
+        "observed_data": [
+            {
+                "metric_id": "median_views",
+                "interpretation": "The channel median is 85,000 views.",  # CONTRADICTS 4,200!
+            }
+        ],
+        "performance_patterns": [],
+        "strategic_hypotheses": [],
+        "study_limitations": [],
+    }
+
+    mock_client = MagicMock()
+    mock_response = MagicMock()
+    mock_response.text = json.dumps(contradictory_response)
+    mock_client.models.generate_content.return_value = mock_response
+
+    analyzer = GeminiAnalysisClient(api_key="mock_key", client=mock_client)
+    report = analyzer.generate_report(metrics, [])
+
+    assert report.model_used == "deterministic_fallback"
+    assert "unverified number '85,000'" in report.study_limitations[0]
+    # Fallback must never claim view retention data
+    assert all("retention" not in h.statement.lower() for h in report.strategic_hypotheses)
 
 
 def test_gemini_client_seamless_fallback_on_api_error():

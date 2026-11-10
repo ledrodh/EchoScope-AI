@@ -122,7 +122,7 @@ def test_cli_overview_and_compare_with_populated_data(capsys, tmp_path):
         (run_t0,),
     )
     service.conn.execute(
-        "INSERT INTO channel_snapshots (run_id, channel_id, subscribers_count) VALUES (?, 'UC_A', 50000)",
+        "INSERT INTO channel_snapshots (run_id, channel_id, subscribers_count, collected_at) VALUES (?, 'UC_A', 50000, '2026-01-15T12:00:00+00:00')",
         (run_t0,),
     )
     service.repository.save_video_batch(
@@ -154,7 +154,7 @@ def test_cli_overview_and_compare_with_populated_data(capsys, tmp_path):
         (run_t1,),
     )
     service.conn.execute(
-        "INSERT INTO channel_snapshots (run_id, channel_id, subscribers_count) VALUES (?, 'UC_A', 52000)",
+        "INSERT INTO channel_snapshots (run_id, channel_id, subscribers_count, collected_at) VALUES (?, 'UC_A', 52000, '2026-01-25T12:00:00+00:00')",
         (run_t1,),
     )
     service.repository.save_video_batch(

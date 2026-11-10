@@ -7,11 +7,11 @@ EchoScope AI replaces naive creator vanity metrics with rigorous, transparent, a
 ## 1. Central Tendency & Dispersion
 
 ### Why Median Over Mean?
-On platforms like YouTube, video view distributions exhibit extreme positive skewness (power-law / Pareto distributions) driven by viral outliers. An arithmetic mean ($$\bar{x}$$) overstates the performance a creator can reliably expect.
+On platforms like YouTube, video view distributions exhibit extreme positive skewness (power-law / Pareto distributions) driven by viral outliers. The arithmetic mean ($$\bar{x}$$) is pulled upward by extreme hits, whereas the median ($$\tilde{x}$$) is less sensitive to extreme viral outliers and provides a more robust measure of typical video performance.
 
 $$\text{Median Views} = \tilde{x} = \text{middle element of sorted views } [v_1, v_2, \dots, v_n]$$
 
-- **Sample Size ($$n$$):** Every median is reported alongside its exact video count ($$n$$) to qualify statistical significance.
+- **Sample Size ($$n$$):** Every median is accompanied by its sample size ($$n$$), providing context for the representativeness and limitations of the observed sample.
 - **Interquartile Range ($$P_{25}$$ and $$P_{75}$$):** Measures baseline consistency versus ceiling potential without assuming normality.
 
 ---
@@ -20,7 +20,8 @@ $$\text{Median Views} = \tilde{x} = \text{middle element of sorted views } [v_1,
 
 $$VSR = \frac{\sum_{i=1}^n \text{Views}_i}{\text{Subscribers}}$$
 
-- **Purpose:** Expresses the empirical view volume of the sampled videos as a multiple of the channel's subscriber count, normalizing cross-channel comparisons across different audience scales. It does not isolate subscriber vs. non-subscriber traffic sources.
+- **Purpose:** An exploratory ratio expressing the empirical view volume of the selected sample relative to the channel's public subscriber count, normalizing cross-channel comparisons across different audience scales. It does not isolate subscriber vs. non-subscriber traffic sources.
+- **Public API Precision Caveat:** YouTube Data API v3 rounds public subscriber counts (`statistics.subscriberCount`) to three significant figures, introducing minor rounding variance for large channels.
 - **Hidden Subscriber Policy:** If a channel owner conceals their subscriber count on YouTube, public API returns `NULL`. EchoScope preserves `NULL` and displays `"Hidden"`. It **never** artificially substitutes `0` or `1`, which would corrupt division and produce misleading ratios.
 
 ---
@@ -57,7 +58,11 @@ $$\text{Share of Tracked Views (\%)} = \left( \frac{\text{Total Views of Channel
 
 ## 6. Growth Signals (Inter-Snapshot Analysis)
 
-When comparing channel snapshots across two runs ($$T_0$$ and $$T_1$$ with $$\Delta t = \text{days between runs}$$):
+When comparing channel snapshots across two runs ($$T_0$$ and $$T_1$$):
+
+$$\Delta t = \frac{T_1 - T_0}{86400} \quad (\text{exact fractional days between } \texttt{channel\_snapshots.collected\_at} \text{ timestamps})$$
+
+Comparisons where $$T_1 \le T_0$$ are strictly rejected to prevent division-by-zero or inverted velocity artifacts.
 
 ### 1. Comparable Video Set ($$C = V_{T0} \cap V_{T1}$$)
 $$\Delta V_i = V_{T1, i} - V_{T0, i}$$

@@ -36,7 +36,7 @@ def classify_video_format(
     duration_seconds: int,
     published_at: date | datetime,
     aspect_ratio: AspectRatio | str | None = None,
-    is_artist_channel: bool = False,
+    is_artist_channel: bool | None = False,
 ) -> FormatClassificationResult:
     """Classifies a video into 'Shorts', 'Long-form', or 'Unknown' based on official temporal rules.
 
@@ -44,16 +44,15 @@ def classify_video_format(
         duration_seconds: Video duration in seconds.
         published_at: Date or datetime when the video was published.
         aspect_ratio: Known orientation ('vertical', 'square', 'horizontal') or None if unexposed by API.
-        is_artist_channel: Whether the channel is an Official Artist Channel (OAC).
+        is_artist_channel: Whether the channel is an Official Artist Channel (OAC), False if Standard,
+            or None when OAC status cannot be verified from public API metadata.
 
     Returns:
         FormatClassificationResult with category, method, and explicit factual evidence.
     """
     pub_date = _normalize_date(published_at)
-    cutoff_date = ARTIST_CUTOFF_DATE if is_artist_channel else STANDARD_CUTOFF_DATE
-    channel_type_desc = "OAC (Artist)" if is_artist_channel else "Standard"
 
-    # Rule 1: Videos exceeding 180 seconds are always Long-form across all dates
+    # Rule 1: Videos exceeding 180 seconds are always Long-form across all channel types and dates
     if duration_seconds > 180:
         return FormatClassificationResult(
             format_category="Long-form",
@@ -68,6 +67,45 @@ def classify_video_format(
             classification_method="aspect_ratio_and_duration",
             classification_evidence="Confirmed horizontal aspect ratio (16:9 landscape)",
         )
+
+    # Rule 3: When channel OAC status is indeterminate (None)
+    if is_artist_channel is None:
+        if pub_date >= ARTIST_CUTOFF_DATE:
+            cutoff_date = ARTIST_CUTOFF_DATE
+            channel_type_desc = "Universal post-OAC"
+        elif pub_date < STANDARD_CUTOFF_DATE:
+            cutoff_date = STANDARD_CUTOFF_DATE
+            channel_type_desc = "Universal pre-expansion"
+        else:
+            # Ambiguous transition window (2024-10-15 .. 2025-12-07)
+            if duration_seconds <= 60 and aspect_ratio in ("vertical", "square"):
+                return FormatClassificationResult(
+                    format_category="Shorts",
+                    classification_method="universal_short_duration",
+                    classification_evidence=(
+                        f"Duration {duration_seconds}s <= 60s with confirmed {aspect_ratio} orientation"
+                    ),
+                )
+            if duration_seconds > 60:
+                return FormatClassificationResult(
+                    format_category="Unknown",
+                    classification_method="indeterminate_channel_type",
+                    classification_evidence=(
+                        f"Duration {duration_seconds}s (61s-180s) published on {pub_date} during OAC "
+                        "transition window, and channel OAC status cannot be verified via public API"
+                    ),
+                )
+            return FormatClassificationResult(
+                format_category="Unknown",
+                classification_method="indeterminate_aspect_ratio",
+                classification_evidence=(
+                    f"Duration {duration_seconds}s <= 60s published on {pub_date}, "
+                    "and public API does not expose aspect ratio"
+                ),
+            )
+    else:
+        cutoff_date = ARTIST_CUTOFF_DATE if is_artist_channel else STANDARD_CUTOFF_DATE
+        channel_type_desc = "OAC (Artist)" if is_artist_channel else "Standard"
 
     # Rule 3: Published BEFORE the applicable cutoff date
     if pub_date < cutoff_date:

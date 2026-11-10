@@ -37,6 +37,21 @@ CREATE TABLE IF NOT EXISTS analysis_run_channels (
     FOREIGN KEY (channel_id) REFERENCES channels(channel_id)
 );
 
+-- 3b. Tentativas de Coleta por Identificador Solicitado (Evita poluir dimensao channels com IDs nao resolvidos)
+CREATE TABLE IF NOT EXISTS analysis_run_channel_inputs (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    run_id TEXT NOT NULL,
+    requested_identifier TEXT NOT NULL,
+    resolved_channel_id TEXT,
+    status TEXT NOT NULL CHECK(status IN ('pending', 'completed', 'failed', 'empty')),
+    error_code TEXT,
+    error_message TEXT DEFAULT '',
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE (run_id, requested_identifier),
+    FOREIGN KEY (run_id) REFERENCES analysis_runs(run_id) ON DELETE CASCADE,
+    FOREIGN KEY (resolved_channel_id) REFERENCES channels(channel_id) ON DELETE SET NULL
+);
+
 -- 4. Medicoes Pontuais do Canal por Execucao
 CREATE TABLE IF NOT EXISTS channel_snapshots (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -81,6 +96,7 @@ CREATE INDEX IF NOT EXISTS idx_runs_period ON analysis_runs(period_start, period
 CREATE INDEX IF NOT EXISTS idx_channel_snapshots ON channel_snapshots(channel_id, collected_at);
 CREATE INDEX IF NOT EXISTS idx_video_snapshots ON video_snapshots(video_id, collected_at);
 CREATE INDEX IF NOT EXISTS idx_videos_channel_date ON videos(channel_id, published_at);
+CREATE INDEX IF NOT EXISTS idx_run_inputs ON analysis_run_channel_inputs(run_id, status);
 """
 
 

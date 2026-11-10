@@ -1,7 +1,7 @@
 """Integration with Google GenAI SDK (gemini-3.8-flash) for structured strategic reporting."""
 
 import json
-from typing import Any
+from typing import Any, Literal
 
 from google import genai
 from google.genai import types
@@ -13,6 +13,7 @@ from echoscope.ai.schemas import (
     MetricReference,
     PerformancePattern,
     StrategicHypothesis,
+    hydrate_report_metrics,
     validate_report_references,
 )
 from echoscope.analytics.metrics import ChannelSummaryMetrics
@@ -69,12 +70,23 @@ def create_fallback_report(
         )
     ]
 
+    fallback_confidence: Literal["low", "medium", "high"]
+    if channel_metrics.sample_size_videos < 5:
+        fallback_confidence = "low"
+    elif channel_metrics.sample_size_videos < 20:
+        fallback_confidence = "medium"
+    else:
+        fallback_confidence = "high"
+
     hypotheses = [
         StrategicHypothesis(
-            statement="Maintain consistent cadence and monitor formats with higher view retention.",
+            statement=(
+                "Maintain consistent upload cadence and evaluate formats driving stronger "
+                "median views, views per day (VPD), and observed likes-to-views engagement."
+            ),
             supporting_metrics=["median_views", "upload_frequency_per_week"],
             limitations=["Generated via deterministic fallback due to external AI unavailability."],
-            confidence_level="medium",
+            confidence_level=fallback_confidence,
         )
     ]
 
@@ -84,7 +96,7 @@ def create_fallback_report(
         f"Analysis bounded to sample of {channel_metrics.sample_size_videos} videos.",
     ]
 
-    return EchoScopeReport(
+    report = EchoScopeReport(
         channel_handle=channel_metrics.handle,
         prompt_version=PROMPT_VERSION,
         model_used=model_name,
@@ -93,6 +105,7 @@ def create_fallback_report(
         strategic_hypotheses=hypotheses,
         study_limitations=limitations,
     )
+    return hydrate_report_metrics(report, channel_metrics.to_analytical_payload())
 
 
 class GeminiAnalysisClient:
@@ -158,7 +171,7 @@ class GeminiAnalysisClient:
             data = json.loads(raw_text)
             report = EchoScopeReport.model_validate(data)
 
-            # Validate that AI references only verified Python metric identifiers
+            # Validate that AI references only verified Python metric identifiers and accurate figures
             is_valid, violations = validate_report_references(report, valid_metrics)
             if not is_valid:
                 violation_summary = "; ".join(violations)
@@ -168,7 +181,7 @@ class GeminiAnalysisClient:
                     "deterministic_fallback",
                 )
 
-            return report
+            return hydrate_report_metrics(report, valid_metrics)
 
         except APIError as e:
             return create_fallback_report(

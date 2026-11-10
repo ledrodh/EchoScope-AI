@@ -95,15 +95,7 @@ class EchoScopeRepository:
         channel_id: str,
         error_code: str,
     ) -> None:
-        """Marks a channel collection as failed within an execution run."""
-        self.upsert_channel(
-            Channel(
-                channel_id=channel_id,
-                handle=f"@{channel_id.lstrip('@')}",
-                title=f"Channel {channel_id}",
-                first_seen_at=datetime.now(UTC),
-            )
-        )
+        """Marks an already-resolved channel collection as failed within an execution run."""
         self.conn.execute(
             """
             INSERT INTO analysis_run_channels (run_id, channel_id, status, videos_collected, error_code)
@@ -115,6 +107,55 @@ class EchoScopeRepository:
             (run_id, channel_id, error_code),
         )
         self.conn.commit()
+
+    def record_channel_input_attempt(
+        self,
+        run_id: str,
+        requested_identifier: str,
+        resolved_channel_id: str | None,
+        status: ChannelRunStatus,
+        error_code: str | None = None,
+        error_message: str = "",
+    ) -> None:
+        """Records user-requested identifier resolution/collection outcome without creating fake channels."""
+        self.conn.execute(
+            """
+            INSERT INTO analysis_run_channel_inputs (
+                run_id, requested_identifier, resolved_channel_id, status, error_code, error_message
+            )
+            VALUES (?, ?, ?, ?, ?, ?)
+            ON CONFLICT(run_id, requested_identifier) DO UPDATE SET
+                resolved_channel_id = COALESCE(excluded.resolved_channel_id, analysis_run_channel_inputs.resolved_channel_id),
+                status = excluded.status,
+                error_code = excluded.error_code,
+                error_message = excluded.error_message
+            """,
+            (
+                run_id,
+                requested_identifier,
+                resolved_channel_id,
+                status,
+                error_code,
+                error_message,
+            ),
+        )
+        self.conn.commit()
+
+    def get_run_input_attempts(self, run_id: str) -> list[dict[str, Any]]:
+        """Retrieves all requested channel input attempts for a given run."""
+        cursor = self.conn.cursor()
+        cursor.execute(
+            """
+            SELECT
+                id, run_id, requested_identifier, resolved_channel_id,
+                status, error_code, error_message, created_at
+            FROM analysis_run_channel_inputs
+            WHERE run_id = ?
+            ORDER BY id ASC
+            """,
+            (run_id,),
+        )
+        return [dict(row) for row in cursor.fetchall()]
 
     def record_channel_snapshot(self, snapshot: ChannelSnapshot) -> None:
         """Records point-in-time subscriber snapshot for a channel in a specific run."""
@@ -332,6 +373,20 @@ class EchoScopeRepository:
                 )
         return channels
 
+    def get_channel_snapshot(self, run_id: str, channel_id: str) -> dict[str, Any] | None:
+        """Retrieves channel snapshot metadata (subscribers_count, collected_at) for a run."""
+        cursor = self.conn.cursor()
+        cursor.execute(
+            """
+            SELECT run_id, channel_id, subscribers_count, collected_at
+            FROM channel_snapshots
+            WHERE run_id = ? AND channel_id = ?
+            """,
+            (run_id, channel_id),
+        )
+        row = cursor.fetchone()
+        return dict(row) if row else None
+
     def get_run_channels(self, run_id: str) -> list[dict[str, Any]]:
         """Retrieves all channels participating in an analysis run."""
         cursor = self.conn.cursor()
@@ -344,7 +399,8 @@ class EchoScopeRepository:
                 arc.status,
                 arc.videos_collected,
                 arc.error_code,
-                cs.subscribers_count
+                cs.subscribers_count,
+                cs.collected_at
             FROM analysis_run_channels arc
             JOIN channels c ON arc.channel_id = c.channel_id
             LEFT JOIN channel_snapshots cs ON arc.run_id = cs.run_id AND arc.channel_id = cs.channel_id

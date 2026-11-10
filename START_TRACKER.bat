@@ -41,10 +41,18 @@ if exist ".venv\Scripts\streamlit.exe" (
         )
     )
 
-    :: Upgrade pip and install package in editable mode from pyproject.toml
-    echo [*] Installing package and dependencies via pyproject.toml...
+    :: Upgrade pip and install locked dependencies + package in editable mode
+    echo [*] Installing locked dependencies and EchoScope AI package...
     ".venv\Scripts\python.exe" -m pip install --upgrade pip
-    ".venv\Scripts\pip.exe" install -e .
+    ".venv\Scripts\pip.exe" install -r requirements.lock
+    if %errorlevel% neq 0 (
+        color 0E
+        echo.
+        echo [ERROR] Failed to install locked dependencies from requirements.lock.
+        pause
+        exit /b 1
+    )
+    ".venv\Scripts\pip.exe" install --no-deps -e .
 
     if %errorlevel% neq 0 (
         color 0E

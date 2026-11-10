@@ -196,7 +196,8 @@ def handle_report(service: PipelineService, args: argparse.Namespace) -> int:
 
     print("\n### 1. OBSERVED DATA (REFERENCED METRICS)")
     for item in report.observed_data:
-        print(f"- [{item.metric_id}]: {item.interpretation}")
+        val_tag = f" [Python Verified: {item.verified_value}]" if item.verified_value else ""
+        print(f"- [{item.metric_id}]{val_tag}: {item.interpretation}")
 
     print("\n### 2. PERFORMANCE PATTERNS")
     for pat in report.performance_patterns:

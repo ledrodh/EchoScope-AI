@@ -1,5 +1,6 @@
 """Pydantic schemas and referential validators for structured Gemini analysis reports."""
 
+import re
 from typing import Any, Literal
 
 from pydantic import BaseModel, Field
@@ -12,7 +13,11 @@ class MetricReference(BaseModel):
         description="The exact identifier of the calculated metric (e.g. 'median_views', 'views_to_subscribers_ratio')"
     )
     interpretation: str = Field(
-        description="Factual summary of what this specific observed metric demonstrates for the channel"
+        description="Qualitative summary of what this specific observed metric demonstrates without fabricating numbers"
+    )
+    verified_value: str | None = Field(
+        default=None,
+        description="Deterministic formatted value hydrated from the Python analytics catalog; leave null in LLM output",
     )
 
 
@@ -62,13 +67,42 @@ class EchoScopeReport(BaseModel):
     )
 
 
+def _format_catalog_value(metric_id: str, entry: dict[str, Any]) -> str:
+    """Formats a canonical metric entry deterministically from the Python catalog."""
+    val = entry.get("value")
+    sample_size = entry.get("sample_size")
+    if val is None:
+        val_str = "Hidden / N/A"
+    elif "ratio_pct" in metric_id:
+        val_str = f"{float(val):.2f}%"
+    elif "ratio" in metric_id or "frequency" in metric_id or "per_day" in metric_id:
+        val_str = f"{float(val):,.2f}"
+    else:
+        val_str = f"{float(val):,.0f}"
+
+    if sample_size is not None:
+        return f"{val_str} (n={sample_size})"
+    return val_str
+
+
+def hydrate_report_metrics(
+    report: EchoScopeReport,
+    valid_metrics: dict[str, dict[str, Any]],
+) -> EchoScopeReport:
+    """Populates verified numeric presentations deterministically from Python's catalog."""
+    for obs in report.observed_data:
+        if obs.metric_id in valid_metrics:
+            obs.verified_value = _format_catalog_value(obs.metric_id, valid_metrics[obs.metric_id])
+    return report
+
+
 def validate_report_references(
     report: EchoScopeReport,
     valid_metrics: dict[str, Any],
 ) -> tuple[bool, list[str]]:
-    """Validates that all metric_id references inside the report exist in the Python metrics catalog.
+    """Validates metric_id existence and numeric consistency against Python's metrics catalog.
 
-    Blocks hallucinatory metric identifiers from reaching the UI.
+    Blocks hallucinatory metric identifiers and contradictory numeric figures from reaching the UI.
     """
     valid_keys = set(valid_metrics.keys())
     violations: list[str] = []
@@ -76,6 +110,29 @@ def validate_report_references(
     for obs in report.observed_data:
         if obs.metric_id not in valid_keys:
             violations.append(f"Observed data references unknown metric_id: '{obs.metric_id}'")
+            continue
+
+        # Validate any numeric claims appearing in free-text interpretation
+        entry = valid_metrics[obs.metric_id]
+        expected_val = entry.get("value") if isinstance(entry, dict) else None
+        expected_sample = entry.get("sample_size") if isinstance(entry, dict) else None
+        raw_nums = re.findall(r"(?<![a-zA-Z0-9_.-])(\d[\d,]*(?:\.\d+)?)", obs.interpretation)
+        for raw_num in raw_nums:
+            try:
+                num = float(raw_num.replace(",", ""))
+            except ValueError:
+                continue
+            matches_val = expected_val is not None and (
+                abs(num - float(expected_val)) <= max(1.0, abs(float(expected_val)) * 0.02)
+            )
+            matches_sample = (
+                expected_sample is not None and abs(num - float(expected_sample)) < 0.01
+            )
+            if not (matches_val or matches_sample):
+                violations.append(
+                    f"Observed data for '{obs.metric_id}' cites unverified number '{raw_num}' "
+                    f"(catalog value={expected_val}, n={expected_sample})"
+                )
 
     for pat in report.performance_patterns:
         for mid in pat.supporting_metric_ids:

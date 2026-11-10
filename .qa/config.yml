@@ -13,12 +13,12 @@ test_paths:
 
 thresholds:
   coverage:
-    line_min: null
-    branch_min: null
+    line_min: 70
+    branch_min: 75
 
 security:
   fail_on_secrets: true
-  vulnerability_gate: null
+  vulnerability_gate: medium
   allowed_exceptions: []
 
 api_testing:
